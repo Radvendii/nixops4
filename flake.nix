@@ -4,7 +4,7 @@
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
-    nix.url = "github:tweag/nix/nix-c-bindings";
+    nix.url = "github:roberth/nix/c-string-context";
     nix.inputs.nixpkgs.follows = "nixpkgs";
     nix-cargo-integration.url = "github:yusdacra/nix-cargo-integration";
     nix-cargo-integration.inputs.nixpkgs.follows = "nixpkgs";
