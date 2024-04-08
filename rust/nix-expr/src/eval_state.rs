@@ -66,7 +66,7 @@ impl EvalState {
     pub fn store(&self) -> &Store {
         &self.store
     }
-    pub fn eval_from_string(&self, expr: String, path: String) -> Result<Value> {
+    pub fn eval_from_string(&self, expr: &str, path: &str) -> Result<Value> {
         let expr_ptr =
             CString::new(expr).with_context(|| "eval_from_string: expr contains null byte")?;
         let path_ptr =
@@ -207,9 +207,7 @@ mod tests {
         gc_registering_current_thread(|| {
             let store = Store::open("auto").unwrap();
             let es = EvalState::new(store).unwrap();
-            let v = es
-                .eval_from_string("1".to_string(), "<test>".to_string())
-                .unwrap();
+            let v = es.eval_from_string("1", "<test>").unwrap();
             let v2 = v.clone();
             es.force(&v).unwrap();
             let t = es.value_type(&v).unwrap();
@@ -226,9 +224,7 @@ mod tests {
         gc_registering_current_thread(|| {
             let store = Store::open("auto").unwrap();
             let es = EvalState::new(store).unwrap();
-            let v = es
-                .eval_from_string("true".to_string(), "<test>".to_string())
-                .unwrap();
+            let v = es.eval_from_string("true", "<test>").unwrap();
             es.force(&v).unwrap();
             let t = es.value_type(&v).unwrap();
             assert!(t == ValueType::Bool);
@@ -241,9 +237,7 @@ mod tests {
         gc_registering_current_thread(|| {
             let store = Store::open("auto").unwrap();
             let es = EvalState::new(store).unwrap();
-            let v = es
-                .eval_from_string("\"hello\"".to_string(), "<test>".to_string())
-                .unwrap();
+            let v = es.eval_from_string("\"hello\"", "<test>").unwrap();
             es.force(&v).unwrap();
             let t = es.value_type(&v).unwrap();
             assert!(t == ValueType::String);
@@ -258,9 +252,7 @@ mod tests {
         gc_registering_current_thread(|| {
             let store = Store::open("auto").unwrap();
             let es = EvalState::new(store).unwrap();
-            let v = es
-                .eval_from_string("true".to_string(), "<test>".to_string())
-                .unwrap();
+            let v = es.eval_from_string("true", "<test>").unwrap();
             es.force(&v).unwrap();
             let r = es.require_string(&v);
             assert!(r.is_err());
@@ -278,9 +270,7 @@ mod tests {
         gc_registering_current_thread(|| {
             let store = Store::open("auto").unwrap();
             let es = EvalState::new(store).unwrap();
-            let v = es
-                .eval_from_string("/foo".to_string(), "<test>".to_string())
-                .unwrap();
+            let v = es.eval_from_string("/foo", "<test>").unwrap();
             es.force(&v).unwrap();
             let r = es.require_string(&v);
             assert!(r.is_err());
@@ -298,10 +288,7 @@ mod tests {
             let store = Store::open("auto").unwrap();
             let es = EvalState::new(store).unwrap();
             let v = es
-                .eval_from_string(
-                    "builtins.substring 0 1 \"ü\"".to_string(),
-                    "<test>".to_string(),
-                )
+                .eval_from_string("builtins.substring 0 1 \"ü\"", "<test>")
                 .unwrap();
             es.force(&v).unwrap();
             let t = es.value_type(&v).unwrap();
@@ -322,7 +309,7 @@ mod tests {
             let store = Store::open("auto").unwrap();
             let es = EvalState::new(store).unwrap();
             let v = es
-                .eval_from_string("(derivation { name = \"hello\"; system = \"dummy\"; builder = \"cmd.exe\"; }).outPath".to_string(), "<test>".to_string())
+                .eval_from_string("(derivation { name = \"hello\"; system = \"dummy\"; builder = \"cmd.exe\"; }).outPath", "<test>")
                 .unwrap();
             es.force(&v).unwrap();
             let t = es.value_type(&v).unwrap();
@@ -340,9 +327,7 @@ mod tests {
         gc_registering_current_thread(|| {
             let store = Store::open("auto").unwrap();
             let es = EvalState::new(store).unwrap();
-            let v = es
-                .eval_from_string("{ }".to_string(), "<test>".to_string())
-                .unwrap();
+            let v = es.eval_from_string("{ }", "<test>").unwrap();
             es.force(&v).unwrap();
             let t = es.value_type(&v).unwrap();
             assert!(t == ValueType::AttrSet);
