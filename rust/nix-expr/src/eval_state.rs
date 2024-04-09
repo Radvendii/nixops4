@@ -138,6 +138,16 @@ impl EvalState {
         Ok(v)
     }
 
+    pub fn new_value_int(&self, i: Int) -> Result<Value> {
+        let v = unsafe {
+            let value = self.new_value_uninitialized();
+            raw::nix_init_int(self.context.ptr(), value.raw_ptr(), i);
+            value
+        };
+        self.context.check_err()?;
+        Ok(v)
+    }
+
     /// Not exposed, because the caller must always explicitly handle the context or not accept one at all.
     fn get_string(&self, value: &Value) -> Result<String> {
         let c_str_raw = unsafe { raw::nix_get_string(self.context.ptr(), value.raw_ptr()) };
@@ -483,6 +493,21 @@ mod tests {
                     }
                 }
             }
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn eval_state_new_int() {
+        gc_registering_current_thread(|| {
+            let store = Store::open("auto").unwrap();
+            let es = EvalState::new(store).unwrap();
+            let v = es.new_value_int(42).unwrap();
+            es.force(&v).unwrap();
+            let t = es.value_type(&v).unwrap();
+            assert!(t == ValueType::Int);
+            let i = es.require_int(&v).unwrap();
+            assert!(i == 42);
         })
         .unwrap();
     }
