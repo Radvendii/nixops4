@@ -32,6 +32,9 @@ impl Context {
         }
         Ok(())
     }
+    pub fn is_key_error(&self) -> bool {
+        unsafe { raw::nix_err_code(self.inner.as_ptr()) == raw::NIX_ERR_KEY }
+    }
 }
 
 impl Drop for Context {

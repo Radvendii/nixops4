@@ -11,7 +11,7 @@ use raw::{
     nix_realised_string_get_store_path_count,
 };
 use std::ffi::CString;
-use std::os::raw::c_uint;
+use std::os::raw::{c_uint, c_void};
 use std::ptr::null_mut;
 use std::ptr::NonNull;
 
@@ -152,6 +152,42 @@ impl EvalState {
             }
         }
         Ok(attrs)
+    }
+
+    pub fn require_attrs_select(&self, v: &Value, attr_name: &str) -> Result<Value> {
+        let r = self.require_attrs_select_opt(v, attr_name)?;
+        match r {
+            Some(v) => Ok(v),
+            None => self.context.check_err().and_then(|_| {
+                // should be unreachable
+                bail!("attribute not found: {}", attr_name)
+            }),
+        }
+    }
+
+    /// Evaluate, require that the value is an attrset, and select an attribute by name.
+    pub fn require_attrs_select_opt(&self, v: &Value, attr_name: &str) -> Result<Option<Value>> {
+        let t = self.value_type(v)?;
+        if t != ValueType::AttrSet {
+            bail!("expected an attrset, but got a {:?}", t);
+        }
+        let attr_name = CString::new(attr_name)
+            .with_context(|| "require_attrs_select_opt: attrName contains null byte")?;
+        // c_void should be Value; why was void generated?
+        let v: *mut c_void = unsafe {
+            raw::nix_get_attr_byname(
+                self.context.ptr(),
+                v.raw_ptr(),
+                self.raw_ptr(),
+                attr_name.as_ptr(),
+            )
+        };
+        if self.context.is_key_error() {
+            Ok(None)
+        } else {
+            self.context.check_err()?;
+            Ok(Some(Value::new(v)))
+        }
     }
 
     /// Create a new value containing the passed string.
@@ -309,27 +345,32 @@ impl Drop for EvalState {
     }
 }
 
+/// Initialize the Nix library for testing. This includes some modifications to the Nix settings, that must not be used in production.
+/// Use at your own peril, in rust test suites.
+pub fn test_init() {
+    (|| -> Result<()> {
+        init()?;
+        // If it reinvokes the test suite,
+        // settings::set("build-hook", "")?;
+
+        // When testing in the sandbox, the default build dir would be a parent of the storeDir,
+        // which causes an error. So we set a custom build dir here.
+        nix_util::settings::set("sandbox-build-dir", "/custom-build-dir-for-test")?;
+        Ok(())
+    })()
+    .unwrap();
+    std::env::set_var("_NIX_TEST_NO_SANDBOX", "1");
+}
+
 #[cfg(test)]
 mod tests {
     use ctor::ctor;
-    use nix_util::settings;
 
     use super::*;
 
     #[ctor]
     fn setup() {
-        (|| -> Result<()> {
-            init()?;
-            // If it reinvokes the test suite,
-            // settings::set("build-hook", "")?;
-
-            // When testing in the sandbox, the default build dir would be a parent of the storeDir,
-            // which causes an error. So we set a custom build dir here.
-            settings::set("sandbox-build-dir", "/custom-build-dir-for-test")?;
-            Ok(())
-        })()
-        .unwrap();
-        std::env::set_var("_NIX_TEST_NO_SANDBOX", "1");
+        test_init();
     }
 
     #[test]
@@ -426,15 +467,65 @@ mod tests {
             let es = EvalState::new(store).unwrap();
             let expr = r#"{ a = throw "nope a"; b = throw "nope b"; }"#;
             let v = es.eval_from_string(expr, "<test>").unwrap();
-            es.force(&v).unwrap();
-            let t = es.value_type(&v).unwrap();
-            assert!(t == ValueType::AttrSet);
             let attrs = es.require_attrs_names(&v).unwrap();
             assert_eq!(attrs.len(), 2);
             assert_eq!(attrs[0], "a");
             assert_eq!(attrs[1], "b");
         })
         .unwrap();
+    }
+
+    #[test]
+    fn eval_state_require_attrs_select() {
+        gc_registering_current_thread(|| {
+            let store = Store::open("auto").unwrap();
+            let es = EvalState::new(store).unwrap();
+            let expr = r#"{ a = "aye"; b = "bee"; }"#;
+            let v = es.eval_from_string(expr, "<test>").unwrap();
+            let a = es.require_attrs_select(&v, "a").unwrap();
+            let b = es.require_attrs_select(&v, "b").unwrap();
+            assert_eq!(es.require_string(&a).unwrap(), "aye");
+            assert_eq!(es.require_string(&b).unwrap(), "bee");
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn eval_state_require_attrs_select_opt() {
+        gc_registering_current_thread(|| {
+            let store = Store::open("auto").unwrap();
+            let es = EvalState::new(store).unwrap();
+            let expr = r#"{ a = "aye"; b = "bee"; }"#;
+            let v = es.eval_from_string(expr, "<test>").unwrap();
+            let a = es.require_attrs_select_opt(&v, "a").unwrap().unwrap();
+            let b = es.require_attrs_select_opt(&v, "b").unwrap().unwrap();
+            assert_eq!(es.require_string(&a).unwrap(), "aye");
+            assert_eq!(es.require_string(&b).unwrap(), "bee");
+            let c = es.require_attrs_select_opt(&v, "c").unwrap();
+            assert!(c.is_none());
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn eval_state_require_attrs_select_opt_error() {
+        gc_registering_current_thread(|| {
+            let store = Store::open("auto").unwrap();
+            let es = EvalState::new(store).unwrap();
+            let expr = r#"{ a = throw "oh no the error"; }"#;
+            let v = es.eval_from_string(expr, "<test>").unwrap();
+            let r = es.require_attrs_select_opt(&v, "a");
+            match r {
+                Ok(_) => panic!("expected an error"),
+                Err(e) => {
+                    if !e.to_string().contains("oh no the error") {
+                        eprintln!("unexpected error message: {}", e);
+                        assert!(false);
+                    }
+                }
+            }
+        })
+        .unwrap()
     }
 
     #[test]
